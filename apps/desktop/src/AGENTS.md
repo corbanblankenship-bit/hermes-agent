@@ -1,107 +1,59 @@
-# apps/desktop/src/ — backend contract, slash palette, Bot Mode
+# Desktop renderer contracts
 
-Applies on top of `apps/desktop/AGENTS.md` (the judgment guide) and the root `AGENTS.md`.
-Root TypeScript style rules apply.
+Architecture: Electron + React + nanostores/@assistant-ui/react over the existing @hermes/shared JSON-RPC client.
+See `../AGENTS.md`, `../DESIGN.md` and `../ENGINEERING.md` for application boundaries.
 
-## Desktop local execution belongs to the canonical gateway
+Canonical gateway ownership:
+- Local primary and pooled launches run `hermes gateway ensure --json` and consume its credential-free endpoint.
+- Authenticate WebSockets with fresh private control tickets; the gateway PID never becomes a Desktop-owned child.
+- Closing, switching or evicting connections disconnects the viewer; explicit gateway lifecycle commands stop owners.
+- Tickets cross private preload IPC transiently, are removed from URLs before socket construction and use subprotocols.
+- Electron removes Origin only for an unexpired, one-use dial bound to the requesting window.
+- Never scrape dashboard tokens or add credentials to public connection descriptors.
+- SSH/URL intent keeps remote resolution/exposure; remote failures never start a local owner.
+- One multiplexing owner serves each home; do not spawn per-profile `hermes serve --port 0` children.
+- HERMES_DESKTOP is not gateway discovery. Secondary homes use GatewayEndpoint.multiplex_home/control sockets.
+- Local, SSH, URL and Cloud backends can serve multiple profiles.
+- Lifecycle/status/settings REST calls carry profile; every new-session tile records its owner route.
+- Test profile scoping as both the launch home and a secondary served by the same process.
+- Require canonical GUI creation policy and private HTTP credentials from the runtime.
+- Never bypass missing capabilities by claiming CLI origin, dropping options or creating an independent serve owner.
 
-Electron + React + nanostores (`@assistant-ui/react`) talks JSON-RPC over the existing
-`@hermes/shared` client. Normal local primary and pooled launches invoke
-`hermes gateway ensure --json`, consume its credential-free endpoint, and authenticate
-WebSockets with fresh private control tickets. The app never acquires the gateway PID as
-an owned child. Closing, switching or evicting a Desktop connection disconnects the viewer;
-only explicit gateway lifecycle commands stop the owner.
+Slash commands:
+- Backend commands.catalog and complete.slash already include builtins, quick commands and skills.
+- `lib/desktop-slash-commands.ts` owns DESKTOP_COMMAND_SPECS and client curation.
+- Define each builtin's desktop disposition once on CommandDef in `hermes_cli/commands.py`.
+- Live catalogs carry that disposition; `lib/desktop-slash-registry.json` is the generated offline fallback.
+- Regenerate with `scripts/dump_desktop_slash_registry.py`; Python and Vitest drift tests must agree.
+- TS_ONLY_NO_DESKTOP_SURFACE contains only commands unknown to Python (Ink-local commands and pets).
+- isDesktopSlashCommand gates execution, admitting builtins and nonbuiltin extension commands.
+- isDesktopSlashSuggestion gates BOTH composer completion paths and filterDesktopCommandsCatalog.
+- Preserve isDesktopSlashExtensionCommand in suggestions and catalogs: curation never hides activated extensions.
+- `app/session/hooks/use-prompt-actions/slash.ts` runSlash handles Desktop-owned builtins locally/catalog-based.
+- Other commands use slash.exec then command.dispatch; skill results submit their message as a normal prompt.
+- From apps/desktop: `npx vitest run src/lib/desktop-slash-commands.test.ts` (dependencies install at repo root).
 
-Native tickets cross the private preload IPC transiently, are removed from the URL before
-WebSocket construction, and are offered as subprotocols. Electron removes Origin only for
-an unexpired one-use dial bound to the requesting window. No public dashboard token is
-scraped or added to the public connection descriptor. SSH/URL intent retains its existing
-remote resolution and exposure lifecycle; a remote failure must never start a local owner.
+Bot Mode (`plugins/hermes-bots`):
+- One bot is one profile with one canonical forever-chat identified by (profile, exact title "Bot Chat").
+- The state DB's unique title registry, not a saved session ID, is canonical identity.
+- On every bot click, query session.list with title and include_hidden:true; resolve compression to the live tip.
+- Existing row: open it. Missing row: re-query before minting, then create titled, hidden, with the bot intro.
+- Adopt on creation conflicts; set_session_title can return zero for duplicate titles and must not cause forks.
+- Ignore/drop legacy ui_meta chat pointers; never use stored IDs as fallback identity or verification.
+- Recency, visibility and last_session never select the bot row's chat.
+- Canonical Bot Chats stay hidden from Sessions; the bot row is their entry point.
+- Side-chats stay visible, have no plumbing title and never become the bot row target.
+- Do not restore a per-bot session browser; fix sidebar visibility through its hide-sweep.
+- profiles.list canonical_session is resolved by title on the backend.
+- Roster preview, activity, click identity and /new→/compact guard all use that same registry row.
+- Tests in plugins/hermes-bots: canonical-chat-registry, canonical-chat-creation,
+  canonical-chat-adopt-on-conflict, bot-row-opens-canonical-chat and hide-bot-chats.
+- Python contract: `tests/tui_gateway/test_profiles_list_canonical_session.py`.
 
-The gateway `gateway ensure` attaches to is **one multiplexing owner per home**: `HERMES_DESKTOP=1`
-is not how the app finds it, and no per-profile `hermes serve --port 0` child is spawned. One
-gateway process serves sessions from several homes (`tui_gateway/AGENTS.md` § Profile scope); a
-served secondary answers through the multiplexer's control socket (`GatewayEndpoint.multiplex_home`).
-Remote connections (SSH, URL+token, Cloud) likewise reach a backend that may serve several profiles
-from one process. Every lifecycle/status/settings REST call carries `?profile=` (or the `profile`
-param) and every new-session tile records an owner route; a backend-side scope fix is probed twice —
-with the profile as the gateway's own launch home and as a secondary served by one process.
-
-This migration requires the runtime's canonical GUI creation policy and a private HTTP
-API credential path. Do not bypass missing runtime capabilities by relabeling GUI sessions
-as CLI, dropping launch options, or falling back to an independent local serve owner.
-
-## Slash commands: curated client-side, dispatched to the backend
-
-- The backend already provides everything: `commands.catalog` and `complete.slash` include built-ins,
-  user `quick_commands`, AND skill-derived commands. No new RPC is needed to see skills.
-- `src/lib/desktop-slash-commands.ts` is the load-bearing file: `DESKTOP_COMMAND_SPECS` (built-ins
-  and their desktop surfaces) + the block-list. A command's desktop disposition (terminal-only /
-  messaging-only / settings-owned / advanced / hidden) is authored ONCE, as `desktop=` on its
-  `CommandDef` in `hermes_cli/commands.py`; the live `commands.catalog` carries it, and
-  `src/lib/desktop-slash-registry.json` (regenerate with `scripts/dump_desktop_slash_registry.py`;
-  `tests/hermes_cli/test_desktop_slash_registry.py` + the vitest file fail on drift) is the offline
-  fallback. Only names the Python registry has never heard of (`/density`, `/details`, `/logs`,
-  `/mouse` — Ink-local; `/pets`) live in `TS_ONLY_NO_DESKTOP_SURFACE`. `isDesktopSlashCommand(name)`
-  gates **execution** (true
-  for built-ins AND any non-built-in so typed skill/quick commands run);
-  `isDesktopSlashSuggestion(name)` gates **discovery** — used by BOTH completion paths in
-  `app/chat/composer/hooks/use-slash-completions.ts` and by `filterDesktopCommandsCatalog`;
-  `isDesktopSlashExtensionCommand(name)` is true for anything not a known built-in, and both
-  suggestion and catalog paths let extensions through (the allow-list once silently dropped every
-  skill/quick command from completions even though they executed when typed).
-- Dispatch: `app/session/hooks/use-prompt-actions/slash.ts` (`runSlash`) — desktop-owned built-ins
-  (`/skin`, `/help`, `/new`, ...) locally or via `commands.catalog`; everything else `slash.exec` →
-  `command.dispatch` fallback; a skill command resolves to `{type: "skill", message}` and is
-  submitted as a normal prompt.
-
-**Rule:** palette curation hides noise (terminal-only / messaging-only built-ins), NEVER
-user-activated extensions. If you tighten `desktop-slash-commands.ts`, keep
-`isDesktopSlashExtensionCommand` flowing into both paths. Test: from `apps/desktop`,
-`npx vitest run src/lib/desktop-slash-commands.test.ts` (workspace deps install at the repo root).
-
-## Bot Mode (`src/plugins/hermes-bots/`) — one bot = ONE canonical forever-chat, identified by NAME
-
-Each bot is a Hermes **profile** with a persistent identity. This invariant regressed repeatedly,
-cost users conversation history each time, and is not open for re-litigation in a routine PR.
-
-The chat's only identity is **(profile, session titled exactly "Bot Chat")**; the state DB's
-UNIQUE(title) index makes that pair a registry of at most one row. Clicking a bot row:
-1. **Resolve the registry, every time:** `session.list {title, include_hidden: true}` (indexed,
-   window-free; hidden rows resolve because canonical chats are always hidden; compression lineages
-   resolve to the live tip). Row exists → open it. That is the whole happy path.
-2. **No row → create it**, titled `Bot Chat`, born hidden, kicked off with the bot's intro. Creation
-   adopts-before-minting: it re-runs the lookup first so a concurrent/pre-existing row is opened,
-   never forked (`set_session_title` silently drops conflicting titles — returns 0 rows — which is how
-   the 2026-08 infinite fork loop started).
-
-**There is NO session-id pin.** The old design stored a pointer in `ui_meta['hermes-bots'].chat`;
-five hardening waves (#88690, #90732, #90751, the #91791 revert, #92042) each guarded a new way it
-dangled or was stolen (rows[0] steals, `last_session` adoptions, transient clears, a pin re-anchored
-onto a cron session). A name cannot dangle; legacy `chat` keys in ui_meta are ignored and dropped.
-**Recency must never win** (#91791 → #92042): canonical Bot Chats are unconditionally hidden from the
-Sessions sidebar, so the bot row is the ONLY door — "newest visible session wins" walls the whole
-relationship off behind a row that previews one session and opens another. Side-chats ("New chat
-with this agent") are not plumbing-titled, stay visible in the sidebar, and are never the row's target.
-
-Reviewer corollaries: no per-bot session browser (removed in #90732; don't add it back). Reject any
-stored session-id pointer as canonical identity — including "as a fallback tier" or "for
-verification". Reject anything consulting recency/visibility/"where the user left off" for the row's
-target; such reports are about side-chats and the fix belongs in the Sessions sidebar hide-sweep.
-The gateway reports the registry row as `canonical_session` on `profiles.list` (resolved server-side
-by title); roster preview, activity signals, and the `/new`→`/compact` guard all read it, so preview
-identity and click identity are the same row by construction. Contract tests:
-in `src/plugins/hermes-bots/`: `canonical-chat-registry.test.ts` (tripwire: the open path never
-reads/writes a stored pointer), `canonical-chat-creation.test.ts`, `canonical-chat-adopt-on-conflict.test.ts`,
-`bot-row-opens-canonical-chat.test.ts`, `hide-bot-chats.test.ts`; plus repo-root
-`tests/tui_gateway/test_profiles_list_canonical_session.py`.
-
-## Free tier surfaces (`src/store/free-tier*.ts`, Billing, statusbar chip, onboarding ready screen)
-
-`$freeTierStatus` mirrors `free_tier.status` (pull; refreshed with the status snapshot and after a
-sign-in). `deriveBillingView` branches on `billing.free_tier_account` BEFORE `logged_in` (status
-`free_tier`: notice + one Sign in, Plan/Model/Connectors summary, no payment or usage rows); the
-`logged_out` notice's Sign in opens the same dialog, never a portal link (a link writes no
-credential). The sign-in dialog is a single claimed owner (first mount wins, like the
-real-profile consent prompt); its states map 1:1 to the poll route's `status` + `reason`. Copy is the ruled free-tier copy: never
-"guest", "anonymous", "claim" or "Nous Portal" in user-facing text.
+Free tier (`store/free-tier*.ts`, Billing, statusbar and ready screen):
+- $freeTierStatus mirrors free_tier.status, refreshed with status snapshots and after sign-in.
+- deriveBillingView checks billing.free_tier_account before logged_in.
+- The free_tier view has a notice, one Sign in and Plan/Model/Connectors summary, no payment/usage rows.
+- Logged-out Sign in opens the same dialog, never a portal link that cannot save credentials.
+- The sign-in dialog has one claimed owner (first mount); states match poll status/reason exactly.
+- Preserve approved copy: do not call users guest/anonymous or use claim/Nous Portal wording.
