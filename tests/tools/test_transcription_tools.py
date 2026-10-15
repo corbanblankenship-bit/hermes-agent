@@ -486,8 +486,11 @@ class TestTranscribeLocalExtended:
         # WhisperModel should be created only once
         assert mock_whisper_cls.call_count == 1
 
-    def test_config_device_and_compute_type_passed_to_whisper(self, tmp_path):
-        """User-configured device and compute_type should be forwarded to WhisperModel.
+    @pytest.mark.parametrize("force_cpu,expected_compute_type", [(False, "float32"), (True, "int8")])
+    def test_config_device_and_compute_type_passed_to_whisper(
+        self, tmp_path, force_cpu, expected_compute_type,
+    ):
+        """Forward config unless the Apple Silicon/Rosetta safety policy requires CPU/int8.
 
         Regression test for #8319: these values were hardcoded to "auto".
         """
@@ -515,13 +518,14 @@ class TestTranscribeLocalExtended:
              patch("faster_whisper.WhisperModel", mock_whisper_cls), \
              patch("tools.transcription_tools._local_model", None), \
              patch("tools.transcription_tools._local_model_name", None), \
-             patch("tools.transcription_tools._load_stt_config", return_value=fake_config):
+             patch("tools.transcription_tools._load_stt_config", return_value=fake_config), \
+             patch("tools.transcription_local._should_force_faster_whisper_cpu", return_value=force_cpu):
             from tools.transcription_tools import _transcribe_local
             result = _transcribe_local(str(audio), "base")
 
         assert result["success"] is True
         mock_whisper_cls.assert_called_once_with(
-            "base", local_files_only=True, device="cpu", compute_type="float32"
+            "base", local_files_only=True, device="cpu", compute_type=expected_compute_type
         )
 
 

@@ -8,6 +8,7 @@ import pytest
 from tools.bot_desktop import resources, runtime
 
 
+@pytest.mark.platforms("linux")
 def test_start_refuses_and_status_explains_when_memory_is_short(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime, "state_dir", lambda: tmp_path / "bd")
     monkeypatch.setattr(runtime, "missing_binaries", list)
@@ -23,6 +24,33 @@ def test_start_refuses_and_status_explains_when_memory_is_short(tmp_path, monkey
     with pytest.raises(RuntimeError, match="Not enough free memory"):
         runtime.start()
     assert spawned == [], "the launcher must not be spawned on a host that cannot hold it"
+
+
+@pytest.mark.platforms("not linux")
+def test_gateway_desktop_refuses_unsupported_host_before_memory_or_spawn(tmp_path, monkeypatch):
+    from tools.bot_desktop import placement, sandbox_host
+
+    state = tmp_path / "bd"
+    monkeypatch.setattr(runtime, "state_dir", lambda: state)
+    monkeypatch.setattr(runtime, "_launcher_pid", lambda: None)
+    monkeypatch.setattr(runtime, "published_env", dict)
+    monkeypatch.setattr(placement, "resolve", lambda: placement.Placement(placement.GATEWAY, "local"))
+    monkeypatch.setattr(sandbox_host, "_read_marker", lambda: None)
+
+    def unsupported_host_probe(*args, **kwargs):
+        pytest.fail("unsupported gateway host must not probe resources or spawn a launcher")
+
+    monkeypatch.setattr(resources, "memory_info", unsupported_host_probe)
+    monkeypatch.setattr(runtime, "missing_binaries", unsupported_host_probe)
+    monkeypatch.setattr(runtime, "_spawn_and_wait", unsupported_host_probe)
+
+    st = runtime.status()
+    assert st.supported is False and st.installed is False and st.running is False
+    assert st.blocker is None
+    assert st.memory_available_mb is None and st.memory_limit_mb is None
+    with pytest.raises(RuntimeError, match="Linux gateway hosts only"):
+        runtime.start()
+    assert not state.exists(), "refused hosts must not allocate desktop state"
 
 
 @pytest.mark.parametrize("info", [

@@ -35,6 +35,7 @@ import tempfile
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "tests" / "fixtures" / "prompt_surface"
@@ -79,7 +80,6 @@ def _pin_environment() -> None:
     socket.socket.connect = refuse  # type: ignore[method-assign]
     socket.create_connection = refuse  # type: ignore[assignment]
     socket.getaddrinfo = refuse  # type: ignore[assignment]
-    sys.platform = "linux"  # skills index ``platforms:`` gate
 
     import hermes_time
     hermes_time.now = lambda: FIXED_NOW  # type: ignore[assignment]
@@ -88,6 +88,9 @@ def _pin_environment() -> None:
     import tools.registry as registry_module
     registry_module._check_fn_cached = lambda _fn: True  # type: ignore[assignment]
     from agent import skill_utils
+    # Only skill visibility is normalized. Mutating process-wide sys.platform
+    # makes stdlib/native imports select nonexistent Linux modules on macOS.
+    skill_utils.sys = SimpleNamespace(platform="linux")
     skill_utils._ENV_DETECT_CACHE.update({"docker": False, "s6": False})
     # The toolchain probe line reports the host's python/node/pip; it is environment, not code.
     from tools import env_probe
@@ -111,6 +114,7 @@ def _scrub(text: str, home: Path) -> str:
         str(home / ".hermes"): "<HERMES_HOME>",
         str(home): "<HOME>",
         f"{_platform.system()} ({_platform.release()})": "<HOST_OS>",
+        f"macOS ({_platform.mac_ver()[0] or _platform.release()})": "<HOST_OS>",
     }.items(), key=lambda kv: -len(kv[0])):
         text = text.replace(raw, token)
     return text

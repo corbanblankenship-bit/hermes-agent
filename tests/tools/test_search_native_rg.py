@@ -140,3 +140,45 @@ def test_local_search_runs_the_pinned_ripgrep_not_the_first_on_path(_local_env, 
                         lambda name: InstalledPackage(pinned.parent, "15", pinned) if name == "ripgrep" else None)
     ops = ShellFileOperations(_local_env, cwd=str(tmp_path))
     assert ops._resolve_command("rg") == str(pinned).replace("\\", "/")
+
+
+@pytest.mark.parametrize("fetch_limit, child_exit, output", [(1, 0, "needle\n"), (10, 0, "needle\n"), (10, 1, "")])
+def test_native_runner_preserves_output_when_child_exits_after_poll(
+    tree, ops_factory, monkeypatch, fetch_limit, child_exit, output,
+):
+    """A stale alive observation must not turn an already-reaped rg into an error."""
+    import os
+    import shlex
+    import subprocess
+    import sys
+
+    ops = ops_factory(tree, [])
+    real_popen = subprocess.Popen
+    children = []
+
+    def popen_with_stale_poll(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        children.append(proc)
+
+        def stale_poll():
+            # Reap this real child before the runner resolves its process group,
+            # but return the alive observation from immediately before exit.
+            proc.wait(timeout=5)
+
+        monkeypatch.setattr(proc, "poll", stale_poll)
+        return proc
+
+    def unexpected_group_signal(*args):
+        pytest.fail("An exited child without a recorded group must not be signalled")
+
+    monkeypatch.setattr(subprocess, "Popen", popen_with_stale_poll)
+    monkeypatch.setattr(os, "killpg", unexpected_group_signal)
+    code = f"import sys; sys.stdout.write({output!r}); sys.exit({child_exit})"
+    result = ops._run_rg_native(
+        [shlex.quote(sys.executable), "-c", shlex.quote(code)], fetch_limit, timeout=5,
+    )
+    assert result.stdout == output
+    assert result.exit_code == child_exit
+    assert len(children) == 1
+    assert children[0].returncode == child_exit
+    assert children[0].stdout.closed

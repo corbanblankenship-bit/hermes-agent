@@ -13,6 +13,8 @@ from __future__ import annotations
 import filecmp
 import importlib.util
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -42,6 +44,38 @@ def test_committed_prompt_surface_is_current(tmp_path):
         "    scripts/run-in-hermes-env python scripts/ci/prompt_surface.py render\n"
         + "\n".join(differences[:20])
     )
+
+
+def test_environment_pinning_preserves_host_platform_and_stdlib_imports():
+    # Run the renderer's patches in its own process; never change this pytest
+    # process's network hooks or platform-dependent imports.
+    code = """
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("prompt_surface", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+host = sys.platform
+module._pin_environment()
+assert sys.platform == host
+import sysconfig
+import zoneinfo
+sysconfig.get_config_vars()
+from agent import skill_utils
+assert skill_utils.skill_matches_platform_list(["linux"])
+assert not skill_utils.skill_matches_platform_list(["darwin"])
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(REPO / "scripts/ci/prompt_surface.py")],
+        cwd=REPO, capture_output=True, text=True, timeout=60, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_scrub_normalizes_the_macos_product_version(monkeypatch, tmp_path):
+    import platform
+    monkeypatch.setattr(platform, "mac_ver", lambda: ("15.4", ("", "", ""), "arm64"))
+    assert prompt_surface._scrub("Host: macOS (15.4)", tmp_path) == "Host: <HOST_OS>"
 
 
 def test_summary_names_the_surface_and_tool_that_changed(tmp_path):

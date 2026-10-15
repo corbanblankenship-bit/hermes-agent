@@ -23,6 +23,8 @@ def _args(**overrides):
 
 @pytest.fixture
 def _quiet_preflight(monkeypatch):
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     monkeypatch.setattr("hermes_cli.config.is_managed", lambda: False)
     # No live psutil lookups: the fixture tuple IS the process table.
     monkeypatch.setattr(update_cmd_windows, "_psutil", lambda: None)

@@ -198,6 +198,8 @@ class TestCommandBoundaryFinalization:
             sys.exit(2)
 
         monkeypatch.setattr(update_cmd, "_cmd_update_impl", _fake_impl)
+        # Interpreter ownership is covered separately; never inspect the host install.
+        monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
         monkeypatch.setattr(
             hermes_main, "detect_install_method", lambda *a, **k: "git", raising=False
         )

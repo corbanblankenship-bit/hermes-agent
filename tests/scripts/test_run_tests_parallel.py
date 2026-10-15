@@ -654,8 +654,31 @@ def test_scratch_root_is_per_user(tmp_path: Path, monkeypatch) -> None:
 
     assert mine != theirs
     assert mine.is_dir() and theirs.is_dir()
-    assert mine.parent == tmp_path and theirs.parent == tmp_path
+    assert mine.parent == tmp_path.resolve() and theirs.parent == tmp_path.resolve()
 
+
+
+def test_scratch_root_resolves_temp_directory_alias(tmp_path: Path, monkeypatch) -> None:
+    """Fixtures use the same canonical path as application realpath checks."""
+    import importlib
+
+    scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
+    monkeypatch.syspath_prepend(str(scripts_dir))
+    runner = importlib.import_module("run_tests_parallel")
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "alias"
+    try:
+        alias.symlink_to(physical, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable on this host")
+    monkeypatch.setattr(runner.tempfile, "gettempdir", lambda: str(alias))
+    real_isdir = os.path.isdir
+    monkeypatch.setattr(runner.os.path, "isdir",
+                        lambda path: False if str(path) == "/var/tmp" else real_isdir(path))
+    root = Path(runner._runner_scratch_root())
+    assert root.is_dir()
+    assert root.parent == physical.resolve()
 
 def test_off_host_note_names_platforms_specs_that_exclude_this_host(tmp_path: Path) -> None:
     """A green local run must say which platforms() tests were skipped and where

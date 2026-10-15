@@ -28,6 +28,7 @@ NESTED_EXT4 = "614 612 8:2 / /data/native rw,relatime - ext4 /dev/sdb1 rw"
 SPACE_VIRTIOFS = "615 25 0:55 / /mnt/my\\040share rw,relatime - virtiofs share rw"
 
 
+@pytest.mark.platforms("linux")
 class TestDetectCrossVmFs:
     @pytest.mark.parametrize("path,expected", [
         ("/data/agent", True),          # fuse.virtiofs bind mount
@@ -51,6 +52,12 @@ class TestDetectCrossVmFs:
 
     def test_missing_mountinfo_conservative_false(self, tmp_path):
         assert _detect_cross_vm_fs("/data", mountinfo_path=str(tmp_path / "nope")) is False
+
+
+@pytest.mark.platforms("not linux")
+def test_non_linux_ignores_linux_mountinfo(tmp_path):
+    mi = _mountinfo(tmp_path, [ROOT_EXT4, BIND_VIRTIOFS])
+    assert _detect_cross_vm_fs("/data/agent", mountinfo_path=mi) is False
 
 
 class TestWalRefusalOnCrossVmFs:

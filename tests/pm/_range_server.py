@@ -16,6 +16,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 
+class RangeServer(HTTPServer):
+    # Download opens eight ranges at once. macOS resets connections queued past
+    # HTTPServer's default backlog of five before the handler can accept them.
+    # Preserve sequential responses (pause tests observe their progress), while
+    # accepting the whole worker burst instead of testing incidental resets.
+    request_queue_size = 64
+
+
 class RangeHandler(BaseHTTPRequestHandler):
     payloads: dict = {}
     ranges_seen: list = []           # (path, start, end) from real Range requests
@@ -110,7 +118,7 @@ def dl_server():
     RangeHandler.no_range = False
     RangeHandler.etags = True
     RangeHandler.chunk = 1 << 20
-    server = HTTPServer(("127.0.0.1", 0), RangeHandler)
+    server = RangeServer(("127.0.0.1", 0), RangeHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

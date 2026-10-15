@@ -631,7 +631,7 @@ test.skipIf(process.platform === 'win32')(
   async (): Promise<void> => {
     const shell: string = (await exec('command -v bash', { shell: 'bash' })).stdout.trim()
     const temp: string = await mkdtemp(path.join(os.tmpdir(), 'hermes wrapper ownership '))
-    const installDir = path.join(temp, 'install dir')
+    const installDir = path.join(temp, "install dir with 'quote Ω")
     const venvBin = path.join(installDir, 'venv', 'bin')
     const pythonLink = path.join(venvBin, 'python')
     const entrypoint = path.join(installDir, 'hermes')

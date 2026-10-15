@@ -347,6 +347,8 @@ def _patch_update_flow(monkeypatch, repo, run_real_git=True):
     repo (the whole point of these regressions).
     """
     monkeypatch.setattr(hermes_main, "PROJECT_ROOT", repo)
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     monkeypatch.setattr(hermes_main, "_resolve_update_branch", lambda args: "main")
     monkeypatch.setattr(hermes_main, "_is_windows", lambda: False)
     monkeypatch.setattr(main_install_repair, "_is_windows", lambda: False)

@@ -105,6 +105,8 @@ def _runner_scratch_root() -> str:
         root = os.path.join(tempfile.gettempdir(), name)
     else:
         root = f"/var/tmp/{name}"  # no-tmp: ok — /var/tmp is disk-backed by FHS, never tmpfs
+    # macOS /var is a symlink: fixtures and application-resolved paths must agree.
+    root = os.path.realpath(root)
     os.makedirs(root, exist_ok=True)
     return root
 

@@ -50,7 +50,8 @@ export function macosSysroot(env = process.env) {
 }
 
 // Preserve xcrun's previous selection when no rung produced a sysroot.
-// `--sdk` must precede the tool name or xcrun passes it to clang.
+// `--sdk` must precede the tool name or xcrun passes it to clang. Pin both
+// xcrun's tool lookup and clang's headers so stale SDKROOT cannot leak into lookup.
 export function xcrunClangArgv(sysroot) {
-  return sysroot ? ['clang', '-isysroot', sysroot] : ['--sdk', 'macosx', 'clang']
+  return sysroot ? ['--sdk', sysroot, 'clang', '-isysroot', sysroot] : ['--sdk', 'macosx', 'clang']
 }

@@ -661,6 +661,33 @@ def test_python_package_stably_signs_macos_runtime(tmp_path):
     assert 'designated => identifier "com.nousresearch.hermes.managed-python"' in identity.stdout + identity.stderr
 
 
+@pytest.mark.parametrize("target,macos_artifact", [
+    ("darwin-arm64", True), ("darwin-x64", True), ("linux-x64", False),
+    ("linux-arm64-bionic", False), ("win32-arm64", False),
+])
+def test_python_stage_signs_only_macos_artifacts_on_a_macos_host(
+        tmp_path, monkeypatch, target, macos_artifact):
+    import sys
+    from pm.registry import get_package
+
+    python = get_package("python")
+    staged = tmp_path / "staged"
+    binary = python.binary(staged, target)
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"staged interpreter fixture")
+    signed = []
+    monkeypatch.setattr(
+        "hermes_cli.macos_signing.sign_managed_python",
+        lambda path: signed.append(path) or True,
+    )
+
+    python.stage(Store(tmp_path / "store"), staged, "fixture", target)
+
+    expected = [binary] if sys.platform == "darwin" and macos_artifact else []
+    assert signed == expected
+    assert binary.read_bytes() == b"staged interpreter fixture"
+
+
 @pytest.mark.platforms("not macos")
 def test_python_package_does_not_sign_non_macos_runtime(monkeypatch, tmp_path):
     import hermes_cli.macos_signing as signing

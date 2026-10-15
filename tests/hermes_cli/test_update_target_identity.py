@@ -56,6 +56,8 @@ def update_tree(tmp_path, monkeypatch):
     newer = git(origin, 'rev-parse', 'HEAD')
 
     monkeypatch.setattr(cli_main, 'PROJECT_ROOT', clone)
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     monkeypatch.setattr(update_receipt, '_code_identity', lambda **_: {'commit': base})
     monkeypatch.setattr(cli_main, '_run_pre_update_backup', lambda *_: 'release-snapshot')
     monkeypatch.setattr(cli_main, '_pause_windows_gateways_for_update', lambda: None)
@@ -242,6 +244,19 @@ def test_stable_git_uses_remote_identity_without_moving_local_tags(update_tree, 
         return run(command, *args, **kwargs)
 
     monkeypatch.setattr(subprocess, 'run', guarded_run)
+    # Native owner-watched fetches use Popen on macOS. Inject the refusal at
+    # the common git boundary while retaining the real custody implementation.
+    from hermes_cli import update_custody
+
+    real_run_git = update_custody.run_git
+
+    def guarded_git_run(git_cmd, git_args, **kwargs):
+        command = [*git_cmd, *git_args]
+        if 'fetch' in command and t.wanted in command and server == 'fetch-refused':
+            return subprocess.CompletedProcess(command, 128, stdout='', stderr='fixture: raw SHA wants disabled')
+        return real_run_git(git_cmd, git_args, **kwargs)
+
+    monkeypatch.setattr(update_custody, 'run_git', guarded_git_run)
     if server == 'fetch-refused':
         with pytest.raises(SystemExit) as error:
             cli_main.cmd_update(t.args)

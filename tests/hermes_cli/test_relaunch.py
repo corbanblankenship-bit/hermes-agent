@@ -93,6 +93,7 @@ class TestRelaunch:
             calls.append((path, argv))
             raise SystemExit(0)
 
+        monkeypatch.setattr(relaunch_mod.sys, "argv", ["/usr/bin/hermes"])
         monkeypatch.setattr(relaunch_mod.os, "execvp", fake_execvp)
         monkeypatch.setattr(relaunch_mod, "resolve_hermes_bin", lambda: "/usr/bin/hermes")
 

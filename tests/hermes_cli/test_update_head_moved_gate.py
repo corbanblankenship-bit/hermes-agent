@@ -46,6 +46,8 @@ def _patch_update_deps(monkeypatch, tmp_path, run_side_effect):
     """
     monkeypatch.setattr(hermes_main.subprocess, "run", run_side_effect)
     monkeypatch.setattr(hermes_main, "PROJECT_ROOT", tmp_path)
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     (tmp_path / ".git").mkdir()  # pass the "is a git repo" gate
     monkeypatch.setattr(
         hermes_main, "_resolve_update_branch", lambda args: "main"

@@ -66,8 +66,12 @@ def test_parallel_requests_overlap_without_exceeding_limit(tmp_path, connections
                 with lock:
                     active -= 1
 
+    class ConcurrentServer(ThreadingHTTPServer):
+        # Accept the whole worker burst before the barrier releases the handlers.
+        request_queue_size = 64
+
     dest = tmp_path / "big.bin"
-    with ThreadingHTTPServer(("127.0.0.1", 0), ConcurrentHandler) as server:
+    with ConcurrentServer(("127.0.0.1", 0), ConcurrentHandler) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:

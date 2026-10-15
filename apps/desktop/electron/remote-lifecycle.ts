@@ -677,16 +677,57 @@ async function pidIsOurDashboard(
     `expected_token=os.path.expanduser(${shq(ownershipId ? spawnTokenPath(ownershipId, spawnNonce) : '')})\n` +
     `expected_profile=${shq(profile)}\n` +
     `nonce=${shq(spawnNonce)}\n` +
+    // ps flattens argv on macOS, losing boundaries in paths containing spaces.
+    // Kernel argv preserves those boundaries; any read/parse error fails closed.
+    "def darwin_argv(pid):\n" +
+    "    import ctypes, struct\n" +
+    "    # CTL_KERN / KERN_PROCARGS2: argc, executable path, padding, argv.\n" +
+    "    mib = (ctypes.c_int * 3)(1, 49, pid)\n" +
+    "    size = ctypes.c_size_t()\n" +
+    "    libc = ctypes.CDLL(None, use_errno=True)\n" +
+    "    libc.sysctl.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_uint,\n" +
+    "                           ctypes.c_void_p, ctypes.POINTER(ctypes.c_size_t),\n" +
+    "                           ctypes.c_void_p, ctypes.c_size_t]\n" +
+    "    libc.sysctl.restype = ctypes.c_int\n" +
+    "    if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0:\n" +
+    "        raise OSError(ctypes.get_errno(), \"cannot size process arguments\")\n" +
+    "    if not 4 <= size.value <= 8 * 1024 * 1024:\n" +
+    "        raise ValueError(\"invalid process argument size\")\n" +
+    "    buf = ctypes.create_string_buffer(size.value)\n" +
+    "    if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:\n" +
+    "        raise OSError(ctypes.get_errno(), \"cannot read process arguments\")\n" +
+    "    if not 4 <= size.value <= len(buf):\n" +
+    "        return []\n" +
+    "    raw = buf.raw[:size.value]\n" +
+    "    argc = struct.unpack_from(\"i\", raw)[0]\n" +
+    "    if not 1 <= argc <= len(raw):\n" +
+    "        raise ValueError(\"invalid process argument count\")\n" +
+    "    offset = raw.find(b\"\\0\", 4)\n" +
+    "    if offset < 0:\n" +
+    "        raise ValueError(\"missing executable terminator\")\n" +
+    "    offset += 1\n" +
+    "    while offset < len(raw) and raw[offset] == 0:\n" +
+    "        offset += 1\n" +
+    "    args = []\n" +
+    "    for _ in range(argc):\n" +
+    "        end = raw.find(b\"\\0\", offset)\n" +
+    "        if end < 0:\n" +
+    "            raise ValueError(\"truncated process arguments\")\n" +
+    "        args.append(raw[offset:end].decode(\"utf-8\", \"surrogateescape\"))\n" +
+    "        offset = end + 1\n" +
+    "    return args\n" +
     'try:\n' +
-    ' raw=open(f"/proc/{pid}/cmdline","rb").read()\n' +
-    ' args=[x.decode("utf-8","surrogateescape") for x in raw.split(b"\\0") if x]\n' +
-    'except OSError:\n' +
-    ' try:\n' +
-    '  line=subprocess.check_output(["ps","-ww","-o","command=","-p",str(pid)],text=True).strip()\n' +
-    ' except subprocess.CalledProcessError:\n' +
-    '  # pid already gone — a dead process is FOREIGN, not a transport error\n' +
-    '  print("FOREIGN");sys.exit(0)\n' +
-    ' args=shlex.split(line)\n' +
+    ' if sys.platform=="darwin":\n' +
+    '  args=darwin_argv(pid)\n' +
+    ' else:\n' +
+    '  try:\n' +
+    '   raw=open(f"/proc/{pid}/cmdline","rb").read()\n' +
+    '   args=[x.decode("utf-8","surrogateescape") for x in raw.split(b"\\0") if x]\n' +
+    '  except OSError:\n' +
+    '   line=subprocess.check_output(["ps","-ww","-o","command=","-p",str(pid)],text=True).strip()\n' +
+    '   args=shlex.split(line)\n' +
+    'except (OSError,ValueError,subprocess.CalledProcessError):\n' +
+    ' print("FOREIGN");sys.exit(0)\n' +
     'ok=False\n' +
     'try:\n' +
     // A profile literally named "serve" puts the value token before the

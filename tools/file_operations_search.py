@@ -401,7 +401,12 @@ class SearchMixin:
                 exit_code = 124
                 break
         if proc.poll() is None:
-            _kill_process_group_posix(proc)  # native lane is POSIX-only (gate above)
+            try:
+                _kill_process_group_posix(proc)  # native lane is POSIX-only (gate above)
+            except ProcessLookupError:
+                # rg can exit after poll() but before its group is resolved. With
+                # no recorded group left to signal, preserve the drained output.
+                pass
         proc.wait()
         drainer.join()
         proc.stdout.close()

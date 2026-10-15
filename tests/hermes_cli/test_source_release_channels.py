@@ -50,6 +50,8 @@ def releases(tmp_path, monkeypatch, request):
     git(checkout, "config", "commit.gpgsign", "false")
     git(checkout, "checkout", "--detach", commits[0])
     monkeypatch.setattr(main, "PROJECT_ROOT", checkout)
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     monkeypatch.setenv("HERMES_INSTALL_ROOT", str(checkout))
     monkeypatch.delenv("HERMES_MANAGED", raising=False)
 

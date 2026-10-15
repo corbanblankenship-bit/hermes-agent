@@ -258,6 +258,8 @@ def _run_cmd_update(monkeypatch, request, capsys):
     from hermes_cli import main, update_cmd, update_receipt
 
     monkeypatch.setenv("HERMES_HOME", request["home"])
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     monkeypatch.setattr(main, "_update_preflight_handled", lambda args: False)
     monkeypatch.setattr(main, "_install_hangup_protection", lambda **kw: None)
     monkeypatch.setattr(main, "_finalize_update_output", lambda state: None)
@@ -406,6 +408,8 @@ def test_interrupt_after_child_success_demotes_gateway_marker_at_boundary(transi
         "time.sleep(30)\n"
     )
     monkeypatch.setenv("HERMES_HOME", request["home"])
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     monkeypatch.setattr(main, "_update_preflight_handled", lambda args: False)
     monkeypatch.setattr(main, "_install_hangup_protection", lambda **kw: None)
     monkeypatch.setattr(main, "_finalize_update_output", lambda state: None)

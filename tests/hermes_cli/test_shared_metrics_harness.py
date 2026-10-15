@@ -4,6 +4,7 @@ command outcomes and model reply issues."""
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -112,10 +113,13 @@ def test_foreground_terminal_commands_count_by_kind_and_outcome(direct_runtime, 
     from tools.terminal_tool import terminal_tool
 
     monkeypatch.setenv("TERMINAL_ENV", "local")
+    # BSD and GNU ls use different nonzero codes; preserve the host command's exact result.
+    ls_exit = subprocess.run(["ls", "/definitely/not/here"], capture_output=True, check=False).returncode
+    assert ls_exit != 0
     results = [json.loads(terminal_tool(command, task_id="harness", timeout=timeout)) for command, timeout in (
         ("ls /definitely/not/here", 30), ("echo ok", 30), ("sh -c 'exit 124'", 30), ("sleep 5", 1),
     )]
-    assert [r["exit_code"] for r in results] == [2, 0, 124, 124]
+    assert [r["exit_code"] for r in results] == [ls_exit, 0, 124, 124]
     terminal_tool("true", task_id="harness", _host_local=True)  # Hermes' own control plane: never counted
     rows = _rows(tmp_path, contract.TERMINAL_OUTCOME_METRIC, "backend", "command_kind", "outcome")
     assert rows == sorted([

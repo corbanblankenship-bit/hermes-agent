@@ -33,8 +33,9 @@ def test_remove_dashboard_launchd_jobs_boots_out_and_deletes_matching_plists(
                     agents_dir)
     serve = job("com.user.hermes-serve", ["hermes", "serve"], agents_dir)
     unrelated = job("com.user.keep", ["/usr/bin/say", "hello"], agents_dir)
-    daemon = job("io.nousresearch.hermes-agent.dashboard", ["hermes_cli.main", "dashboard"],
+    daemon = job("io.nousresearch.hermes-agent.dashboard", ["python3", "-m", "hermes_cli.main", "dashboard"],
                  daemons_dir)
+    module_only = job("com.user.module-argument-only", ["hermes_cli.main", "dashboard"], daemons_dir)
 
     booted = []
     monkeypatch.setattr(uninstall.subprocess, "run", lambda cmd, **kw: booted.append(cmd))
@@ -46,6 +47,7 @@ def test_remove_dashboard_launchd_jobs_boots_out_and_deletes_matching_plists(
     assert sorted(removed) == sorted([dashboard, serve, daemon])
     assert not dashboard.exists() and not serve.exists() and not daemon.exists()
     assert unrelated.exists()  # non-Hermes job is never touched
+    assert module_only.exists()  # a module name without its Python launcher is not ownership proof
     domains = {tuple(cmd[2].rsplit("/", 1)) for cmd in booted}
     assert ("com.user.hermes-dashboard", "gui/501") in domains or \
         {d for d, _ in domains} >= {"gui/501", "user/501"} or booted  # bootout attempted per domain

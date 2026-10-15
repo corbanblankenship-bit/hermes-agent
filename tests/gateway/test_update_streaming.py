@@ -361,6 +361,7 @@ class TestCmdUpdateGatewayMode:
         (root / "notes.txt").write_text("user edit\n", encoding="utf-8")
         monkeypatch.setattr(main, "PROJECT_ROOT", root)
         # Isolate host/service phases; options, Git, stash and prompt dispatch stay real.
+        monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
         monkeypatch.setattr(main, "_update_preflight_handled", lambda args: False)
         monkeypatch.setattr(main, "_install_hangup_protection", lambda **kw: None)
         monkeypatch.setattr(main, "_finalize_update_output", lambda state: None)

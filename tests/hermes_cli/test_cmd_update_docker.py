@@ -30,12 +30,14 @@ from hermes_cli.main import cmd_update
 @patch("hermes_cli.version_info.get_version_info")
 @patch("subprocess.run")
 def test_cmd_update_in_docker_prints_guidance_and_exits(
-    mock_run, _mock_version, _mock_method, _mock_managed, capsys
+    mock_run, _mock_version, _mock_method, _mock_managed, capsys, monkeypatch
 ):
     """``hermes update`` inside Docker → friendly message + exit 2, no git calls.
 
     Exit 2 = refused-by-contract (#91277 Phase 3), distinct from exit-1 errors.
     """
+    # Interpreter ownership is covered separately; never inspect the host install.
+    monkeypatch.setattr("hermes_cli.update_owning_install.retarget_to_owning_install", lambda _: None)
     with pytest.raises(SystemExit) as excinfo:
         cmd_update(SimpleNamespace(check=False))
 
